@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Pathfinding Visualizer</title>
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-family: Arial, sans-serif;
+        background-color: #f0f0f0;
+      }
+
+      .controls {
+        margin: 20px;
+        padding: 10px;
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      button {
+        margin: 5px;
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        background-color: #4caf50;
+        color: white;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background-color: #45a049;
+      }
+
+      .grid {
+        display: grid;
+        gap: 1px;
+        background-color: #ccc;
+        padding: 1px;
+        border-radius: 4px;
+      }
+
+      .cell {
+        width: 25px;
+        height: 25px;
+        background-color: white;
+        border: 1px solid #eee;
+        transition: background-color 0.3s;
+      }
+
+      .wall {
+        background-color: #34495e !important;
+      }
+
+      .start {
+        background-color: #2ecc71 !important;
+      }
+
+      .end {
+        background-color: #e74c3c !important;
+      }
+
+      .visited {
+        background-color: #3498db !important;
+        animation: visitedAnimation 0.3s ease-out;
+      }
+
+      .path {
+        background-color: #f1c40f !important;
+        animation: pathAnimation 0.3s ease-out;
+      }
+
+      @keyframes visitedAnimation {
+        0% {
+          transform: scale(0.3);
+          background-color: #8e44ad;
+        }
+        50% {
+          transform: scale(1.2);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+
+      @keyframes pathAnimation {
+        0% {
+          transform: scale(0.3);
+        }
+        50% {
+          transform: scale(1.2);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <button onclick="setTool('wall')">Place Walls</button>
+      <button onclick="setTool('start')">Set Start</button>
+      <button onclick="setTool('end')">Set End</button>
+      <button onclick="clearGrid()">Clear Grid</button>
+      <button onclick="startPathfinding()">Find Path</button>
+    </div>
+    <div id="grid" class="grid"></div>
+
+    <script>
+      const GRID_SIZE = 20;
+      let grid = [];
+      let startPos = null;
+      let endPos = null;
+      let currentTool = "wall";
+      let isMouseDown = false;
+
+      // Initialize the grid
+      function initializeGrid() {
+        const gridElement = document.getElementById("grid");
+        gridElement.style.gridTemplateColumns = `repeat(${GRID_SIZE}, 25px)`;
+
+        for (let i = 0; i < GRID_SIZE; i++) {
+          grid[i] = [];
+          for (let j = 0; j < GRID_SIZE; j++) {
+            const cell = document.createElement("div");
+            cell.className = "cell";
+            cell.dataset.row = i;
+            cell.dataset.col = j;
+
+            cell.addEventListener("mousedown", () => {
+              isMouseDown = true;
+              handleCellClick(i, j);
+            });
+            cell.addEventListener("mouseover", () => {
+              if (isMouseDown) handleCellClick(i, j);
+            });
+            cell.addEventListener("mouseup", () => {
+              isMouseDown = false;
+            });
+
+            gridElement.appendChild(cell);
+            grid[i][j] = {
+              element: cell,
+              isWall: false,
+              isStart: false,
+              isEnd: false,
+              f: 0,
+              g: 0,
+              h: 0,
+              parent: null,
+            };
+          }
+        }
+      }
+
+      function setTool(tool) {
+        currentTool = tool;
+      }
+
+      function handleCellClick(row, col) {
+        const cell = grid[row][col];
+
+        if (currentTool === "wall") {
+          cell.isWall = !cell.isWall;
+          cell.element.classList.toggle("wall");
+        } else if (currentTool === "start") {
+          if (startPos) {
+            grid[startPos.row][startPos.col].isStart = false;
+            grid[startPos.row][startPos.col].element.classList.remove("start");
+          }
+          cell.isStart = true;
+          cell.element.classList.add("start");
+          startPos = { row, col };
+        } else if (currentTool === "end") {
+          if (endPos) {
+            grid[endPos.row][endPos.col].isEnd = false;
+            grid[endPos.row][endPos.col].element.classList.remove("end");
+          }
+          cell.isEnd = true;
+          cell.element.classList.add("end");
+          endPos = { row, col };
+        }
+      }
+
+      function clearGrid() {
+        for (let i = 0; i < GRID_SIZE; i++) {
+          for (let j = 0; j < GRID_SIZE; j++) {
+            const cell = grid[i][j];
+            cell.isWall = false;
+            cell.isStart = false;
+            cell.isEnd = false;
+            cell.element.className = "cell";
+          }
+        }
+        startPos = null;
+        endPos = null;
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function startPathfinding() {
+        if (!startPos || !endPos) {
+          alert("Please set both start and end points");
+          return;
+        }
+
+        // Clear previous path
+        document.querySelectorAll(".visited, .path").forEach((element) => {
+          element.classList.remove("visited", "path");
+        });
+
+        const path = await astar();
+        if (path) {
+          // Animate the path
+          for (let i = 1; i < path.length - 1; i++) {
+            const { row, col } = path[i];
+            grid[row][col].element.classList.add("path");
+            await sleep(50);
+          }
+        } else {
+          alert("No path found!");
+        }
+      }
+
+      function getNeighbors(node) {
+        const neighbors = [];
+        const directions = [
+          [-1, 0],
+          [1, 0],
+          [0, -1],
+          [0, 1], // Cardinal directions
+          [-1, -1],
+          [-1, 1],
+          [1, -1],
+          [1, 1], // Diagonal directions
+        ];
+
+        for (const [dx, dy] of directions) {
+          const newRow = node.row + dx;
+          const newCol = node.col + dy;
+
+          if (
+            newRow >= 0 &&
+            newRow < GRID_SIZE &&
+            newCol >= 0 &&
+            newCol < GRID_SIZE &&
+            !grid[newRow][newCol].isWall
+          ) {
+            neighbors.push({ row: newRow, col: newCol });
+          }
+        }
+
+        return neighbors;
+      }
+
+      function heuristic(pos1, pos2) {
+        return Math.abs(pos1.row - pos2.row) + Math.abs(pos1.col - pos2.col);
+      }
+
+      async function astar() {
+        const openSet = [startPos];
+        const closedSet = new Set();
+
+        // Reset path finding properties
+        for (let i = 0; i < GRID_SIZE; i++) {
+          for (let j = 0; j < GRID_SIZE; j++) {
+            grid[i][j].f = 0;
+            grid[i][j].g = 0;
+            grid[i][j].h = 0;
+            grid[i][j].parent = null;
+          }
+        }
+
+        while (openSet.length > 0) {
+          // Find node with lowest f score
+          let current = openSet[0];
+          let currentIndex = 0;
+
+          for (let i = 1; i < openSet.length; i++) {
+            if (
+              grid[openSet[i].row][openSet[i].col].f <
+              grid[current.row][current.col].f
+            ) {
+              current = openSet[i];
+              currentIndex = i;
+            }
+          }
+
+          // Check if we reached the end
+          if (current.row === endPos.row && current.col === endPos.col) {
+            const path = [];
+            let temp = current;
+            while (temp !== null) {
+              path.push(temp);
+              temp = grid[temp.row][temp.col].parent;
+            }
+            return path.reverse();
+          }
+
+          // Remove current from openSet and add to closedSet
+          openSet.splice(currentIndex, 1);
+          closedSet.add(`${current.row},${current.col}`);
+
+          // Visualize visited cell
+          if (
+            !grid[current.row][current.col].isStart &&
+            !grid[current.row][current.col].isEnd
+          ) {
+            grid[current.row][current.col].element.classList.add("visited");
+            await sleep(20);
+          }
+
+          // Check neighbors
+          const neighbors = getNeighbors(current);
+          for (const neighbor of neighbors) {
+            if (closedSet.has(`${neighbor.row},${neighbor.col}`)) continue;
+
+            const tentativeG = grid[current.row][current.col].g + 1;
+
+            const neighborCell = grid[neighbor.row][neighbor.col];
+            if (
+              !openSet.some(
+                (pos) => pos.row === neighbor.row && pos.col === neighbor.col
+              )
+            ) {
+              openSet.push(neighbor);
+            } else if (tentativeG >= neighborCell.g) {
+              continue;
+            }
+
+            neighborCell.parent = current;
+            neighborCell.g = tentativeG;
+            neighborCell.h = heuristic(neighbor, endPos);
+            neighborCell.f = neighborCell.g + neighborCell.h;
+          }
+        }
+
+        return null; // No path found
+      }
+
+      // Initialize the grid when the page loads
+      initializeGrid();
+
+      // Prevent dragging when using the grid
+      document.addEventListener("mouseup", () => {
+        isMouseDown = false;
+      });
+    </script>
+  </body>
+</html>
